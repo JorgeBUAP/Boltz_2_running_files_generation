@@ -1,0 +1,120 @@
+import os
+import argparse
+
+def read_fasta_sequence(fasta_file):
+    with open(fasta_file, encoding='utf-8') as f:
+        lines = f.readlines()
+    seq_lines = [line.strip() for line in lines if line and not line.startswith(">")]
+    sequence = ''.join(seq_lines)
+    return sequence
+
+def make_dimer_yaml(smiles, sequence):
+    return f"""sequences:
+  - protein:
+      id: [A,B]
+      sequence: {sequence}
+  - ligand:
+      id: [X,Y]
+      smiles: "{smiles}"
+"""
+
+def make_monomer_yaml(smiles, sequence):
+    return f"""sequences:
+  - protein:
+      id: A
+      sequence: {sequence}
+  - ligand:
+      id: X
+      smiles: "{smiles}"
+properties:
+  - affinity:
+      binder: X
+"""
+
+def sanitize_filename(name):
+    return "".join(c if c.isalnum() or c in "-_" else "_" for c in name)
+
+def fasta_prefix(fasta_file):
+    return os.path.splitext(os.path.basename(fasta_file))[0] if fasta_file else "FUT6"
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Generate FUTX dimer/monomer YAML files from a .smi SMILES file. Optionally use a custom sequence from a FASTA file.",
+        epilog="""
+Input file format (.smi):
+    Each line: SMILES<space>molecule_name
+
+Output:
+    All YAML files are saved into a single output directory (default: output_yaml).
+    If the directory does not exist, it will be created.
+
+YAML format will be indented as required for Boltz, with the sequence as a single line string.
+
+Examples:
+    python generate_yaml_files.py -i molecules.smi --type dimer
+    python generate_yaml_files.py -i molecules.smi --fasta FUT7.fasta --type monomer -o my_output_folder
+    python generate_yaml_files.py -i molecules.smi --fasta FUT8.fasta --type both -o output_yaml
+
+Use -h or --help for this message.
+        """
+    )
+    parser.add_argument(
+        '-i', '--input', required=True, help="Input SMILES file (.smi format: SMILES<space>name per line)"
+    )
+    parser.add_argument(
+        '--fasta', help="FASTA file with the protein sequence to use in the YAML files"
+    )
+    parser.add_argument(
+        '-o', '--output', default="output_yaml", help="Directory for output YAML files (default: output_yaml)"
+    )
+    parser.add_argument(
+        '--type', choices=["dimer", "monomer", "both"], default="both",
+        help="Type of YAML file(s) to generate: dimer, monomer, or both (default: both)"
+    )
+    args = parser.parse_args()
+
+    # Sequence: from FASTA or default
+    if args.fasta:
+        sequence = read_fasta_sequence(args.fasta)
+        prefix = fasta_prefix(args.fasta)
+    else:
+        sequence = (
+            "MDPLGPAKPQWSWRCCLTTLLFQLLMAVCFFSYLRVSQDDPTVYPNGSRFPDSTGTPAHS"
+            "IPLILLWTWPFNKPIALPRCSEMVPGTADCNITADRKVYPQADAVIVHHREVMYNPSAQL"
+            "PRSPRRQGQRWIWFSMESPSHCWQLKAMDGYFNLTMSYRSDSDIFTPYGWLEPWSGQPAH"
+            "PPLNLSAKTELVAWAVSNWGPNSARVRYYQSLQAHLKVDVYGRSHKPLPQGTMMETLSRY"
+            "KFYLAFENSLHPDYITEKLWRNALEAWAVPVVLGPSRSNYERFLPPDAFIHVDDFQSPKD"
+            "LARYLQELDKDHARYLSYFRWRETLRPRSFSWALAFCKACWKLQEESRYQTRGIAAWFT"
+        )
+        prefix = "FUT6"
+
+    output_dir = os.path.abspath(args.output)
+    os.makedirs(output_dir, exist_ok=True)
+    with open(args.input, encoding='utf-8') as f:
+        for line in f:
+            if not line.strip() or line.strip().startswith("#"):
+                continue
+            parts = line.strip().split()
+            if len(parts) < 2:
+                print(f"Skipping invalid line: {line.strip()}")
+                continue
+            smiles = parts[0]
+            mol_name = " ".join(parts[1:])
+            safe_name = sanitize_filename(mol_name)
+            # Write dimer YAML if requested
+            if args.type in ("dimer", "both"):
+                dimer_yaml = make_dimer_yaml(smiles, sequence)
+                dimer_fname = os.path.join(output_dir, f"{prefix}_dimer_{safe_name}.yaml")
+                with open(dimer_fname, "w", encoding="utf-8") as out:
+                    out.write(dimer_yaml)
+            # Write monomer YAML if requested
+            if args.type in ("monomer", "both"):
+                monomer_yaml = make_monomer_yaml(smiles, sequence)
+                monomer_fname = os.path.join(output_dir, f"{prefix}_monomer_{safe_name}.yaml")
+                with open(monomer_fname, "w", encoding="utf-8") as out:
+                    out.write(monomer_yaml)
+    print(f"YAML files written to: {output_dir}")
+
+if __name__ == "__main__":
+    main()
+
