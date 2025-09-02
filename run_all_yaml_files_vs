@@ -1,0 +1,33 @@
+#!/bin/bash
+
+YAML_DIR="/ibex/scratch/projects/c2296/FUT6_dimmer_models/boltz_FUT6_VS/output_yaml"
+for YAML_FILE in "${YAML_DIR}"/*.yaml; do
+  sbatch <<EOF
+#!/bin/bash
+#SBATCH -N 1
+#SBATCH --partition=batch
+#SBATCH -J Boltz_prediction
+#SBATCH -o Boltz_prediction.%j_%N.out
+#SBATCH -e Boltz_prediction.%j_%N.err
+#SBATCH --mail-type=ALL
+#SBATCH --time=00:25:00
+#SBATCH --mem=60GB
+#SBATCH --gres=gpu:1
+#SBATCH --cpus-per-task=32
+#SBATCH --constraint=v100
+
+export TORCH_FORCE_FLOAT32_MATMUL_PRECISION=medium
+
+boltz predict "$YAML_FILE" \
+  --use_msa_server \
+  --out_dir /ibex/scratch/projects/c2296/FUT6_dimmer_models/boltz_FUT6_VS/ \
+  --cache /ibex/scratch/projects/c2296/FUT6_dimmer_models/boltz_FUT6_VS/ \
+  --recycling_steps 20 \
+  --diffusion_samples 5 \
+  --max_parallel_samples 40 \
+  --num_workers 8 \
+  --preprocessing-threads 40 \
+  --devices 1 \
+  --accelerator gpu
+EOF
+done
